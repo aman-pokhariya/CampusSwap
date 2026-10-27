@@ -6,7 +6,8 @@ export const nameField = z
     .string({ error: "Name is required" })
     .trim()
     .min(2, "Name must be at least 2 characters")
-    .max(50, "Name must be 50 characters or less");
+    .max(50, "Name must be 50 characters or less")
+    .regex(/^\P{Cc}*$/u, "Name can't contain line breaks");
 
 export const emailField = z
     .string({ error: "Email is required" })
@@ -28,3 +29,10 @@ export const otpField = z
     .regex(/^\d{6}$/, "Enter the 6-digit code");
 
 export const hostelField = z.string().trim().max(80, "Hostel name is too long");
+
+export const objectIdField = z.string({ error: "Invalid id" }).regex(/^[a-f\d]{24}$/i, "Invalid id");
+
+// Cursor for newest-first lists: ?before=<ISO date of the oldest item already loaded>.
+export const beforeField = z.coerce.date({ error: "Invalid date" }).optional();
+
+export const limitField = (fallback, max) => z.coerce.number().int().min(1).max(max).default(fallback);

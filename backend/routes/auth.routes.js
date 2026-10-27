@@ -6,11 +6,18 @@ import {
     login,
     logout,
     getMe,
+    getSocketToken,
     forgotPassword,
     resetPassword
 } from "../controllers/auth.controllers.js";
-import { isAuthenticated } from "../middlewares/auth.middleware.js";
-import { credentialLimiter, emailLimiter } from "../middlewares/rateLimit.middleware.js";
+import { blockDemo, isAuthenticated } from "../middlewares/auth.middleware.js";
+import {
+    credentialLimiter,
+    emailLimiter,
+    loginEmailLimiter,
+    mailIpLimiter,
+    socketTokenLimiter
+} from "../middlewares/rateLimit.middleware.js";
 import validate from "../middlewares/validate.middleware.js";
 import {
     signupSchema,
@@ -23,16 +30,18 @@ import {
 
 const authRoutes = express.Router();
 
-// Order on each route: rate limit → validate body → controller
-authRoutes.post("/signup", emailLimiter, validate(signupSchema), signup);
-authRoutes.post("/verify-email", credentialLimiter, validate(verifyEmailSchema), verifyEmail);
-authRoutes.post("/resend-otp", emailLimiter, validate(resendOtpSchema), resendOtp);
+// Order on each route: rate limit → validate body → controller. The three routes that send email share
+// mailIpLimiter (one daily allowance per network) on top of emailLimiter (per address).
+authRoutes.post("/signup", mailIpLimiter, emailLimiter, validate(signupSchema), signup);
+authRoutes.post("/verify-email", credentialLimiter, loginEmailLimiter, validate(verifyEmailSchema), verifyEmail);
+authRoutes.post("/resend-otp", mailIpLimiter, emailLimiter, validate(resendOtpSchema), resendOtp);
 
-authRoutes.post("/login", credentialLimiter, validate(loginSchema), login);
+authRoutes.post("/login", credentialLimiter, loginEmailLimiter, validate(loginSchema), login);
 authRoutes.post("/logout", logout);
 authRoutes.get("/me", isAuthenticated, getMe);
+authRoutes.get("/socket-token", isAuthenticated, socketTokenLimiter, getSocketToken);
 
-authRoutes.post("/forgot-password", emailLimiter, validate(forgotPasswordSchema), forgotPassword);
-authRoutes.post("/reset-password", credentialLimiter, validate(resetPasswordSchema), resetPassword);
+authRoutes.post("/forgot-password", mailIpLimiter, emailLimiter, validate(forgotPasswordSchema), blockDemo(), forgotPassword);
+authRoutes.post("/reset-password", credentialLimiter, loginEmailLimiter, validate(resetPasswordSchema), blockDemo(), resetPassword);
 
 export default authRoutes;

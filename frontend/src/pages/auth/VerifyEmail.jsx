@@ -11,6 +11,7 @@ import { authApi } from "../../api/auth.api";
 import { setCurrentUser } from "../../redux/authSlice";
 import { formatSeconds, useCountdown } from "../../hooks/useCountdown";
 import { getErrorData, getErrorMessage } from "../../utils/errors";
+import { announceSession } from "../../utils/sessionSync";
 
 const isComplete = (code) => /^\d{6}$/.test(code);
 
@@ -21,6 +22,7 @@ export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
 
   const email = location.state?.email || searchParams.get("email") || "";
+  const from = location.state?.from; // where to go once verified (see Login)
 
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -31,18 +33,30 @@ export default function VerifyEmail() {
 
   if (!email) return <Navigate to="/signup" replace />;
 
+  // Someone signed up again with this email (in another browser, say) after this code was sent, so
+  // it can't finish this sign-up any more: start over, with the email already filled in.
+  const restartSignup = (data) => {
+    toast.warning(data.message || "This sign-up was restarted. Please sign up again.");
+    navigate("/signup", { replace: true, state: { email, from } });
+  };
+
   const verify = async (otp) => {
     setVerifying(true);
     setError("");
     try {
       const { user, message } = await authApi.verifyEmail({ email, otp });
       toast.success(message);
-      dispatch(setCurrentUser(user)); // PublicOnlyRoute now sends the user to /home
+      dispatch(setCurrentUser(user)); // PublicOnlyRoute now sends the user to /home (or where they were going)
+      announceSession(user._id);
     } catch (err) {
       const data = getErrorData(err);
       if (data.code === "ALREADY_VERIFIED") {
         toast.info(data.message);
-        navigate("/login", { replace: true, state: { email } });
+        navigate("/login", { replace: true, state: { email, from } });
+        return;
+      }
+      if (data.code === "SIGNUP_RESTARTED") {
+        restartSignup(data);
         return;
       }
       setError(getErrorMessage(err));
@@ -60,18 +74,20 @@ export default function VerifyEmail() {
     if (isComplete(value) && !verifying) verify(value);
   };
 
+  // The answer is the same whether or not the email has an account, so it never says which.
   const resend = async () => {
     setResending(true);
     try {
       const { message, resendIn } = await authApi.resendOtp({ email, purpose: "verify-email" });
-      toast.success(message);
+      toast.success(message || "If that email is waiting to be verified, a new code is on its way.");
       restartCountdown(resendIn ?? 60);
       setError("");
       setCode("");
       setAttempt((n) => n + 1);
     } catch (err) {
-      const { retryAfter } = getErrorData(err);
-      if (retryAfter) restartCountdown(retryAfter);
+      const data = getErrorData(err);
+      if (data.code === "SIGNUP_RESTARTED") return restartSignup(data);
+      if (data.retryAfter) restartCountdown(data.retryAfter);
       toast.error(getErrorMessage(err));
     } finally {
       setResending(false);
@@ -124,7 +140,7 @@ export default function VerifyEmail() {
             </button>
           )}
         </span>
-        <Link to="/signup" className="font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
+        <Link to="/signup" state={{ from }} className="font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
           Wrong email?
         </Link>
       </div>

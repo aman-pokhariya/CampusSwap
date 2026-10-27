@@ -1,6 +1,14 @@
 import mongoose from "mongoose";
+import multer from "multer";
 import ApiError from "../utils/ApiError.js";
 import env from "../config/env.js";
+import { MAX_LISTING_IMAGES } from "../config/constants.js";
+
+const UPLOAD_ERRORS = {
+    LIMIT_FILE_SIZE: "Each photo must be 5 MB or smaller",
+    LIMIT_FILE_COUNT: `You can add up to ${MAX_LISTING_IMAGES} photos`,
+    LIMIT_UNEXPECTED_FILE: `You can add up to ${MAX_LISTING_IMAGES} photos`
+};
 
 export const notFound = (req, res, next) => {
     next(new ApiError(404, `Route not found: ${req.method} ${req.originalUrl}`));
@@ -12,6 +20,11 @@ export const notFound = (req, res, next) => {
 export const errorMiddleware = (err, req, res, next) => {
     if (err instanceof ApiError) {
         return res.status(err.statusCode).json({ success: false, message: err.message, ...err.details });
+    }
+
+    if (err instanceof multer.MulterError) {
+        const message = UPLOAD_ERRORS[err.code] ?? err.message;
+        return res.status(400).json({ success: false, message, errors: { images: message } });
     }
 
     if (err instanceof mongoose.Error.ValidationError) {

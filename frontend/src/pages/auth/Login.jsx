@@ -12,11 +12,15 @@ import { authApi } from "../../api/auth.api";
 import { setCurrentUser } from "../../redux/authSlice";
 import { looksLikeEmail } from "../../utils/campus";
 import { getErrorData, getErrorMessage, getFieldErrors } from "../../utils/errors";
+import { announceSession } from "../../utils/sessionSync";
 
 export default function Login() {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  // The page a logged-out visitor was heading to (ProtectedRoute). It travels along to sign-up,
+  // verification and password reset too, so every way in ends up there.
+  const from = location.state?.from;
 
   const [form, setForm] = useState({ email: location.state?.email ?? "", password: "" });
   const [errors, setErrors] = useState({});
@@ -45,11 +49,12 @@ export default function Login() {
       const { user, message } = await authApi.login({ email: form.email.trim(), password: form.password });
       toast.success(message);
       dispatch(setCurrentUser(user)); // PublicOnlyRoute sends the user on to /home (or where they were going)
+      announceSession(user._id);
     } catch (error) {
       const data = getErrorData(error);
       if (data.code === "EMAIL_NOT_VERIFIED") {
         toast.info(data.message);
-        navigate("/verify-email", { state: { email: data.email, resendIn: data.resendIn } });
+        navigate("/verify-email", { state: { email: data.email, resendIn: data.resendIn, from } });
         return;
       }
       setErrors(getFieldErrors(error));
@@ -82,7 +87,7 @@ export default function Login() {
           labelAside={
             <Link
               to="/forgot-password"
-              state={{ email: form.email }}
+              state={{ email: form.email, from }}
               className="text-xs font-semibold text-brand-600 hover:underline dark:text-brand-400"
             >
               Forgot password?
@@ -102,7 +107,7 @@ export default function Login() {
 
       <p className="mt-8 text-center text-sm text-slate-600 dark:text-slate-400">
         New to CampusSwap?{" "}
-        <Link to="/signup" className="font-semibold text-brand-600 hover:underline dark:text-brand-400">
+        <Link to="/signup" state={{ from }} className="font-semibold text-brand-600 hover:underline dark:text-brand-400">
           Create an account
         </Link>
       </p>

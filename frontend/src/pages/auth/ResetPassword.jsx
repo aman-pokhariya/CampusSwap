@@ -14,6 +14,7 @@ import { setCurrentUser } from "../../redux/authSlice";
 import { formatSeconds, useCountdown } from "../../hooks/useCountdown";
 import { getErrorData, getErrorMessage, getFieldErrors } from "../../utils/errors";
 import { passwordError } from "../../utils/password";
+import { announceSession } from "../../utils/sessionSync";
 
 export default function ResetPassword() {
   const location = useLocation();
@@ -21,6 +22,7 @@ export default function ResetPassword() {
   const [searchParams] = useSearchParams();
 
   const email = location.state?.email || searchParams.get("email") || "";
+  const from = location.state?.from; // PublicOnlyRoute goes there once the password is reset
 
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -47,7 +49,8 @@ export default function ResetPassword() {
     try {
       const { user, message } = await authApi.resetPassword({ email, otp: code, password });
       toast.success(message);
-      dispatch(setCurrentUser(user)); // PublicOnlyRoute now sends the user to /home
+      dispatch(setCurrentUser(user)); // PublicOnlyRoute now sends the user to /home (or where they were going)
+      announceSession(user._id);
     } catch (err) {
       const fieldErrors = getFieldErrors(err);
       setErrors(Object.keys(fieldErrors).length > 0 ? fieldErrors : { form: getErrorMessage(err) });
@@ -57,11 +60,12 @@ export default function ResetPassword() {
     }
   };
 
+  // Same answer whether or not the email has an account (see ForgotPassword).
   const resend = async () => {
     setResending(true);
     try {
       const { message, resendIn } = await authApi.resendOtp({ email, purpose: "reset-password" });
-      toast.success(message);
+      toast.success(message || `If ${email} has an account, a new code is on its way.`);
       restartCountdown(resendIn ?? 60);
       setErrors((current) => ({ ...current, otp: undefined, form: undefined }));
       setCode("");
@@ -81,7 +85,8 @@ export default function ResetPassword() {
         title="Set a new password"
         subtitle={
           <>
-            Enter the code we sent to <span className="font-semibold text-slate-900 dark:text-white">{email}</span>
+            If <span className="font-semibold text-slate-900 [overflow-wrap:anywhere] dark:text-white">{email}</span> has an account, we've
+            sent it a 6-digit code. Enter it below.
           </>
         }
       />
@@ -142,6 +147,7 @@ export default function ResetPassword() {
 
       <Link
         to="/login"
+        state={{ email, from }}
         className="mt-6 flex items-center justify-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
       >
         <ArrowLeft className="size-4" /> Back to log in

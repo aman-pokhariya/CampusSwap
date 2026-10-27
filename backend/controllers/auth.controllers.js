@@ -1,17 +1,45 @@
+import crypto from "crypto";
 import bcrypt from "bcrypt";
 import User from "../models/user.model.js";
 import Campus from "../models/campus.model.js";
 import ApiError from "../utils/ApiError.js";
 import { toPoint } from "../models/schemas/point.schema.js";
-import { clearAuthCookie, setAuthCookie } from "../utils/authCookie.js";
-import { consumeOtp, sendOtp, sendOtpIfAllowed } from "../utils/otp.js";
-import { CAMPUS_PUBLIC_FIELDS, OTP_PURPOSE } from "../config/constants.js";
+import {
+    clearAuthCookie,
+    clearSignupCookie,
+    readSessionUserId,
+    readSignupCookie,
+    setAuthCookie,
+    setSignupCookie
+} from "../utils/authCookie.js";
+import { consumeOtp, sendOtpIfAllowed } from "../utils/otp.js";
+import { signSocketToken } from "../utils/socketToken.js";
+import { takeMailAllowance } from "../middlewares/rateLimit.middleware.js";
+import { disconnectUser } from "../socket/index.js";
+import { CAMPUS_PUBLIC_FIELDS, OTP_PURPOSE, OTP_RESEND_COOLDOWN_SECONDS } from "../config/constants.js";
 
 // Login compares against this when the email doesn't exist, so a wrong email takes as long
 // as a wrong password and response times don't reveal who has an account.
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("campusswap-timing-guard", 12);
 
 const firstName = (name) => name.split(" ")[0];
+
+const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
+
+// Whoever sets an unverified account's password gets a random nonce in the "signup" cookie, and the
+// account keeps only its hash. Signing up again for the same email (from anyone) replaces both, so a code
+// that is already in the inbox can't verify an account whose password someone else chose: only the
+// browser that set the current password can finish verifying.
+const newSignupNonce = () => {
+    const nonce = crypto.randomBytes(16).toString("hex");
+    return { nonce, hash: sha256(nonce) };
+};
+
+const signupRestartedError = () =>
+    new ApiError(400, "This sign-up was restarted — please sign up again", { code: "SIGNUP_RESTARTED" });
+
+const alreadyVerifiedError = () =>
+    new ApiError(400, "This email is already verified. Log in instead.", { code: "ALREADY_VERIFIED" });
 
 // Logs the user in and sends back their profile with campus details.
 const sendSession = async (res, user, message, status = 200) => {
@@ -45,14 +73,18 @@ export const signup = async (req, res) => {
     }
 
     // An unverified account (e.g. the code never arrived) can sign up again: update it instead of failing.
+    // The new password and the new nonce are saved together, in one write.
     if (!user) user = new User({ email });
 
+    const { nonce, hash } = newSignupNonce();
     user.name = name;
     user.password = password;
+    user.signupNonceHash = hash;
     user.campus = campus._id;
     user.hostel = hostelPlace?.name ?? "";
     user.location = toPoint(hostelPlace?.location ?? campus.location);
     await user.save();
+    setSignupCookie(res, nonce);
 
     const resendIn = await sendOtpIfAllowed({ email, name, purpose: OTP_PURPOSE.VERIFY_EMAIL });
 
@@ -68,45 +100,53 @@ export const signup = async (req, res) => {
 export const verifyEmail = async (req, res) => {
     const { email, otp } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select("+signupNonceHash");
 
     if (!user) {
         throw new ApiError(404, "No account found for this email. Sign up first.");
     }
-    if (user.isVerified) {
-        throw new ApiError(400, "This email is already verified. Log in instead.", { code: "ALREADY_VERIFIED" });
-    }
+    if (user.isVerified) throw alreadyVerifiedError();
+
+    // Only the browser that set the current password may verify (see newSignupNonce). Checked before the
+    // code, so nobody else can use up its attempts.
+    const nonce = readSignupCookie(req);
+    if (typeof nonce !== "string" || sha256(nonce) !== user.signupNonceHash) throw signupRestartedError();
 
     await consumeOtp(email, OTP_PURPOSE.VERIFY_EMAIL, otp);
 
-    user.isVerified = true;
-    user.lastLoginAt = new Date();
-    await user.save();
+    // One conditional update: a sign-up that lands while the code is being checked replaces the hash
+    // (and the password), so then nothing matches.
+    const verified = await User.findOneAndUpdate(
+        { _id: user._id, isVerified: false, signupNonceHash: user.signupNonceHash },
+        { $set: { isVerified: true, lastLoginAt: new Date() }, $unset: { signupNonceHash: 1 } },
+        { returnDocument: "after" }
+    );
+    if (!verified) {
+        throw (await User.exists({ _id: user._id, isVerified: true })) ? alreadyVerifiedError() : signupRestartedError();
+    }
 
-    return sendSession(res, user, `Email verified — welcome to CampusSwap, ${firstName(user.name)}!`);
+    clearSignupCookie(res);
+    return sendSession(res, verified, `Email verified — welcome to CampusSwap, ${firstName(verified.name)}!`);
 };
 
+// Same answer whether or not an account is waiting for this code, like forgotPassword: one body with a
+// fixed resendIn, and the email itself goes out in the background. Demo accounts can't be reset.
 export const resendOtp = async (req, res) => {
     const { email, purpose } = req.body;
 
     const user = await User.findOne({ email });
+    const verifying = purpose === OTP_PURPOSE.VERIFY_EMAIL;
+    const waiting = verifying ? user && !user.isVerified : user?.isVerified && !user.isBanned && !user.isDemo;
 
-    if (purpose === OTP_PURPOSE.VERIFY_EMAIL) {
-        if (!user) throw new ApiError(404, "No account found for this email. Sign up first.");
-        if (user.isVerified) {
-            throw new ApiError(400, "This email is already verified. Log in instead.", { code: "ALREADY_VERIFIED" });
-        }
-        const resendIn = await sendOtp({ email, name: user.name, purpose });
-        return res.json({ success: true, message: `New code sent to ${email}`, resendIn });
-    }
+    if (waiting) await sendOtpIfAllowed({ email, name: user.name, purpose, background: true });
 
-    // Password reset: answer the same way whether or not the account exists,
-    // so this endpoint can't be used to find out who is registered.
-    let resendIn;
-    if (user?.isVerified && !user.isBanned) {
-        resendIn = await sendOtp({ email, name: user.name, purpose });
-    }
-    return res.json({ success: true, message: `If ${email} has an account, a new code is on its way`, resendIn });
+    return res.json({
+        success: true,
+        message: verifying
+            ? `If ${email} is waiting to be verified, a new code is on its way`
+            : `If ${email} has an account, a new code is on its way`,
+        resendIn: OTP_RESEND_COOLDOWN_SECONDS
+    });
 };
 
 export const login = async (req, res) => {
@@ -124,8 +164,18 @@ export const login = async (req, res) => {
     }
 
     if (!user.isVerified) {
-        const resendIn = await sendOtpIfAllowed({ email, name: user.name, purpose: OTP_PURPOSE.VERIFY_EMAIL });
-        throw new ApiError(403, "Verify your email first — we sent you a code", {
+        // The password was just proven, so this browser may finish verifying: it gets a new sign-up nonce.
+        // The update only matches while the password is still the one checked above (a sign-up landing
+        // in between replaces it, and then this browser gets no nonce).
+        const { nonce, hash } = newSignupNonce();
+        const { matchedCount } = await User.updateOne({ _id: user._id, password: user.password }, { $set: { signupNonceHash: hash } });
+        if (matchedCount > 0) setSignupCookie(res, nonce);
+
+        // A fresh code takes from this network's daily email allowance, like a resend would.
+        const allowed = await takeMailAllowance(req);
+        const resendIn = allowed ? await sendOtpIfAllowed({ email, name: user.name, purpose: OTP_PURPOSE.VERIFY_EMAIL }) : 0;
+        // The sign-up cookie set above survives this error: the error middleware doesn't reset headers.
+        throw new ApiError(403, allowed ? "Verify your email first — we sent you a code" : "Verify your email first", {
             code: "EMAIL_NOT_VERIFIED",
             email,
             resendIn
@@ -139,6 +189,13 @@ export const login = async (req, res) => {
 };
 
 export const logout = (req, res) => {
+    // Other tabs of this browser would keep their live connection, and keep receiving chats, after the
+    // cookie is gone. Once this response is out, the user's sockets are closed: those tabs reconnect, can't
+    // get a socket token without the cookie and are logged out by the HTTP interceptor. Other devices
+    // simply reconnect with their own session cookie.
+    const userId = readSessionUserId(req);
+    if (userId) res.once("finish", () => disconnectUser(userId));
+
     clearAuthCookie(res);
     return res.json({ success: true, message: "Logged out" });
 };
@@ -148,22 +205,30 @@ export const getMe = async (req, res) => {
     return res.json({ success: true, user: req.user });
 };
 
+// A 2-minute token for opening the real-time connection (see utils/socketToken.js).
+export const getSocketToken = (req, res) => {
+    res.set("Cache-Control", "no-store");
+    return res.json({ success: true, token: signSocketToken(req.user._id) });
+};
+
 export const forgotPassword = async (req, res) => {
     const { email } = req.body;
 
     const user = await User.findOne({ email });
 
-    // Same response whether or not the account exists (see resendOtp).
-    let resendIn;
+    // Same answer whether or not the account exists: one body with a fixed resendIn (the seconds left of
+    // a cooldown would only exist for real accounts), and the email goes out in the background, so a slow
+    // send or an email error can't give it away either. (Signing up still says when an email is taken:
+    // a deliberate trade-off for a clear sign-up form.)
     if (user?.isVerified && !user.isBanned) {
-        resendIn = await sendOtpIfAllowed({ email, name: user.name, purpose: OTP_PURPOSE.RESET_PASSWORD });
+        await sendOtpIfAllowed({ email, name: user.name, purpose: OTP_PURPOSE.RESET_PASSWORD, background: true });
     }
 
     return res.json({
         success: true,
         message: `If ${email} has an account, we've sent a reset code`,
         email,
-        resendIn
+        resendIn: OTP_RESEND_COOLDOWN_SECONDS
     });
 };
 
@@ -186,5 +251,7 @@ export const resetPassword = async (req, res) => {
     user.lastLoginAt = new Date();
     await user.save();
 
+    // Open tabs elsewhere drop their live connection; they can't get a new socket token with the old session.
+    res.once("finish", () => disconnectUser(user._id));
     return sendSession(res, user, "Password updated — you're logged in");
 };

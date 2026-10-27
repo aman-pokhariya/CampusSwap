@@ -2,10 +2,25 @@ import crypto from "crypto";
 import bcrypt from "bcrypt";
 import Otp from "../models/otp.model.js";
 import ApiError from "./ApiError.js";
+import env from "../config/env.js";
 import { sendOtpEmail } from "./email.js";
 import { OTP_MAX_ATTEMPTS, OTP_RESEND_COOLDOWN_SECONDS, OTP_TTL_MS } from "../config/constants.js";
 
 const COOLDOWN_MS = OTP_RESEND_COOLDOWN_SECONDS * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+// When each code of the last 24 hours went out, at most EMAIL_DAILY_CAP of them. The rate limits stop
+// one network; this is the backstop for the whole server (many IPs at once), so the sending account
+// never goes over its provider's daily quota. In memory, which is enough for a single server.
+let recentSends = [];
+
+const takeFromDailyCap = () => {
+    const now = Date.now();
+    recentSends = recentSends.filter((at) => now - at < ONE_DAY_MS);
+    if (recentSends.length >= env.EMAIL_DAILY_CAP) return false;
+    recentSends.push(now);
+    return true;
+};
 
 // Creates (or replaces) the code for this email + purpose and returns it in plain text.
 const issueOtp = async (email, purpose) => {
@@ -39,17 +54,30 @@ const issueOtp = async (email, purpose) => {
     return code;
 };
 
-// Generates and emails a code. Returns seconds until another code may be requested.
-export const sendOtp = async ({ email, name, purpose }) => {
-    const code = await issueOtp(email, purpose);
-
+// Emails a code that was just saved. If it can't go out, the code is deleted again: the email never
+// left, so the user mustn't sit through the cooldown for it.
+const deliverOtp = async ({ email, name, code, purpose }) => {
     try {
+        if (!takeFromDailyCap()) {
+            throw new ApiError(503, "We've sent a lot of emails today. Please try again tomorrow.", { code: "EMAIL_LIMIT" });
+        }
         await sendOtpEmail({ to: email, name, code, purpose });
     } catch (err) {
-        // The email never left, so don't make the user sit through the cooldown.
         await Otp.deleteOne({ email, purpose });
         throw err;
     }
+};
+
+// Generates and emails a code. Returns seconds until another code may be requested.
+// `background: true` only waits until the code is saved; the email then goes out on its own and a failure
+// is logged. For the endpoints that answer the same way whether or not the account exists: waiting for a
+// slow send, or reporting an email error, would give the answer away.
+export const sendOtp = async ({ email, name, purpose, background = false }) => {
+    const code = await issueOtp(email, purpose);
+    const delivery = deliverOtp({ email, name, code, purpose });
+
+    if (background) delivery.catch((err) => console.error("⚠️ Couldn't send a code email:", err.message));
+    else await delivery;
 
     return OTP_RESEND_COOLDOWN_SECONDS;
 };

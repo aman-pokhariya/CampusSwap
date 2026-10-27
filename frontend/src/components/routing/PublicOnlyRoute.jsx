@@ -9,7 +9,8 @@ export default function PublicOnlyRoute({ children }) {
   const location = useLocation();
 
   if (loading) return <SplashScreen />;
-  if (user) return <Navigate to={location.state?.from?.pathname ?? "/home"} replace />;
+  // Passing the whole saved location keeps its ?query too (e.g. feed filters).
+  if (user) return <Navigate to={location.state?.from ?? "/home"} replace />;
 
   return children;
 }

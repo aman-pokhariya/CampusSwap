@@ -22,6 +22,7 @@
   --animate-float: float 6s ease-in-out infinite;
   --animate-shake: shake 0.4s ease-in-out;
   --animate-dash: dash 1.2s linear infinite;
+  --animate-confetti: confetti 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) both;
 
   @keyframes fade-up {
     from {
@@ -63,6 +64,18 @@
   @keyframes dash {
     to {
       stroke-dashoffset: -24;
+    }
+  }
+
+  /* Paper bits falling over the "Deal completed" card. */
+  @keyframes confetti {
+    from {
+      opacity: 1;
+      transform: translateY(-1.5rem) rotate(0deg);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(14rem) rotate(600deg);
     }
   }
 }
