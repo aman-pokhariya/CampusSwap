@@ -76,7 +76,7 @@ export default function OtpInput({ value, onChange, length = 6, disabled = false
           disabled={disabled}
           aria-label={`Digit ${index + 1}`}
           aria-invalid={invalid || undefined}
-          className={`h-14 w-full min-w-0 rounded-xl border-2 bg-white text-center text-2xl font-bold text-slate-900 caret-brand-500 shadow-sm outline-none transition focus:ring-4 disabled:opacity-60 dark:bg-slate-900 dark:text-white ${
+          className={`h-14 w-full min-w-0 rounded-xl border-2 bg-white text-center text-2xl font-bold text-slate-900 caret-brand-500 shadow-sm outline-hidden transition focus:ring-4 disabled:opacity-60 dark:bg-slate-900 dark:text-white ${
             invalid
               ? "border-rose-400 focus:ring-rose-500/15 dark:border-rose-500/70"
               : digit

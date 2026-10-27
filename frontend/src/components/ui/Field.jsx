@@ -1,8 +1,11 @@
 import { useId } from "react";
 import { ChevronDown } from "lucide-react";
 
+// 16px text on touch screens: iOS zooms into any field with smaller text and stays zoomed. A mouse
+// (pointer-fine) gets the compact 14px. outline-hidden (not outline-none) keeps an outline for
+// Windows high-contrast mode, which drops the box-shadow focus ring.
 const fieldClasses = (error, extra) =>
-  `w-full rounded-xl border bg-white text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:ring-4 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500 dark:disabled:bg-slate-800/70 dark:disabled:text-slate-400 ${
+  `w-full rounded-xl border bg-white text-base text-slate-900 shadow-sm outline-hidden transition placeholder:text-slate-400 focus:ring-4 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 pointer-fine:text-sm dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500 dark:disabled:bg-slate-800/70 dark:disabled:text-slate-400 ${
     error
       ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/15 dark:border-rose-500/70"
       : "border-slate-200 focus:border-brand-500 focus:ring-brand-500/15 dark:border-slate-700 dark:focus:border-brand-400"

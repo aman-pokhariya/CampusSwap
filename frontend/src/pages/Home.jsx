@@ -1,135 +1,225 @@
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { ArrowRight, BadgeCheck, Building, MapPin, Package, ShieldCheck, Sparkles } from "lucide-react";
-import { buttonClasses } from "../components/ui/Button";
-import { LISTING_TYPES } from "../constants/listingTypes";
+import { ArrowRight, Building, PackageOpen, Plus, RefreshCw, SearchX, SlidersHorizontal } from "lucide-react";
+import ListingGrid from "../components/listings/ListingGrid";
+import {
+  ActiveFilterChips,
+  FilterPanel,
+  PANEL_FILTER_KEYS,
+  SearchInput,
+  SortSelect,
+  TypeChips,
+} from "../components/listings/FeedFilters";
+import Button, { buttonClasses } from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
+import Alert from "../components/ui/Alert";
+import { useGetFeedInfiniteQuery } from "../api/listings.api";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 
-const card = "rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900";
+const FILTER_KEYS = ["q", "type", "category", "condition", "minPrice", "maxPrice", "within", "sort"];
 
 const greetingFor = (hour) => (hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening");
 
-function ProfileRow({ label, value }) {
+function HostelNudge() {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <dt className="text-slate-500 dark:text-slate-400">{label}</dt>
-      <dd className="text-right font-semibold">{value}</dd>
-    </div>
+    <section className="flex flex-col gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-500/30 dark:bg-amber-500/10">
+      <div className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+          <Building className="size-5" />
+        </span>
+        <div>
+          <p className="font-semibold text-amber-900 dark:text-amber-100">Add your hostel</p>
+          <p className="text-sm text-amber-800/80 dark:text-amber-200/80">See how far each item is, and let nearby students find yours first.</p>
+        </div>
+      </div>
+      <Link to="/settings" className={buttonClasses({ variant: "secondary", size: "sm" })}>
+        Set hostel <ArrowRight className="size-4" />
+      </Link>
+    </section>
   );
 }
 
 export default function Home() {
   const user = useSelector((state) => state.auth.user);
-  const campus = user.campus;
-  const firstName = user.name.split(" ")[0];
-  const memberSince = new Date(user.createdAt).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+  const [params, setParams] = useSearchParams();
+
+  // Filters live in the URL: they survive refreshes, the back button keeps them, and links can be shared.
+  const filters = useMemo(
+    () => Object.fromEntries(FILTER_KEYS.flatMap((key) => (params.get(key) ? [[key, params.get(key)]] : []))),
+    [params],
+  );
+
+  const updateFilters = useCallback(
+    (patch) =>
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          for (const [key, value] of Object.entries(patch)) {
+            if (value === undefined || value === null || value === "") next.delete(key);
+            else next.set(key, String(value));
+          }
+          return next;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
+
+  // The search box writes to the URL once you pause typing.
+  const [search, setSearch] = useState(filters.q ?? "");
+  const debouncedSearch = useDebouncedValue(search);
+  const lastPushedQuery = useRef(filters.q ?? "");
+
+  useEffect(() => {
+    const q = debouncedSearch.trim();
+    if (q === lastPushedQuery.current) return;
+    lastPushedQuery.current = q;
+    updateFilters({ q });
+  }, [debouncedSearch, updateFilters]);
+
+  // ...and follows the URL when it changes some other way (back button, "clear filters").
+  useEffect(() => {
+    const q = filters.q ?? "";
+    if (q !== lastPushedQuery.current) {
+      lastPushedQuery.current = q;
+      setSearch(q);
+    }
+  }, [filters.q]);
+
+  const sort = filters.sort ?? (filters.q ? "relevance" : "newest");
+  const { data, isLoading, isFetching, isFetchingNextPage, isError, isFetchNextPageError, error, hasNextPage, fetchNextPage, refetch } =
+    useGetFeedInfiniteQuery({ ...filters, sort, limit: 12 });
+
+  // Pages can overlap if new listings arrive while scrolling; show each listing once.
+  const listings = useMemo(() => {
+    const seen = new Set();
+    return (data?.pages ?? []).flatMap((page) => page.listings).filter((l) => !seen.has(l._id) && seen.add(l._id));
+  }, [data]);
+
+  // After a failed page, wait for Retry: the sentinel is still in view and would fire again at once.
+  const sentinelRef = useInfiniteScroll(() => fetchNextPage(), {
+    enabled: hasNextPage && !isFetching && !isError,
+    pageCount: data?.pages.length ?? 0,
+  });
+
+  const panelFilterCount = PANEL_FILTER_KEYS.filter((key) => filters[key]).length;
+  const [panelOpen, setPanelOpen] = useState(panelFilterCount > 0);
+  const isFiltered = panelFilterCount > 0 || Boolean(filters.type || filters.q);
+  const refreshing = isFetching && !isFetchingNextPage && !isLoading;
+
+  const clearAll = () => {
+    setSearch("");
+    lastPushedQuery.current = "";
+    setParams({}, { replace: true });
+  };
 
   return (
-    <div className="animate-fade-up space-y-6">
-      <section className="relative overflow-hidden rounded-3xl bg-linear-to-br from-brand-600 via-violet-600 to-fuchsia-600 p-6 text-white sm:p-8">
-        <div className="absolute -top-16 -right-10 size-64 rounded-full bg-white/10 blur-2xl" />
-        <div className="absolute -bottom-24 left-1/3 size-72 rounded-full bg-fuchsia-300/20 blur-2xl" />
+    <div className="space-y-5">
+      <header>
+        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+          {greetingFor(new Date().getHours())}, {user.name.split(" ")[0]} 👋
+        </p>
+        <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Explore {user.campus.shortName}</h1>
+      </header>
 
-        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-white/80">{greetingFor(new Date().getHours())} 👋</p>
-            <h1 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">Welcome, {firstName}</h1>
-            <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-sm font-medium ring-1 ring-white/25">
-              <BadgeCheck className="size-4" /> Verified student · {campus.name}
-            </p>
-          </div>
+      {!user.hostel && <HostelNudge />}
+
+      {/* Sticks under the navbar while you scroll */}
+      <div className="sticky top-16 z-30 -mx-4 space-y-3 bg-slate-50/85 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 dark:bg-slate-950/85">
+        <div className="flex gap-2">
+          <SearchInput value={search} onChange={setSearch} />
           <button
             type="button"
-            disabled
-            title="Posting opens in the next update"
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-white px-5 font-semibold text-brand-700 shadow-lg disabled:cursor-not-allowed"
+            onClick={() => setPanelOpen((open) => !open)}
+            aria-expanded={panelOpen}
+            className={`relative inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border px-3.5 text-sm font-semibold shadow-sm transition ${
+              panelOpen
+                ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            }`}
           >
-            <Sparkles className="size-4" /> Post a listing
-            <span className="rounded-md bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide uppercase">Soon</span>
+            <SlidersHorizontal className="size-4" />
+            <span className="hidden sm:inline">Filters</span>
+            {panelFilterCount > 0 && (
+              <span className="grid size-5 place-items-center rounded-full bg-brand-600 text-[11px] font-bold text-white">
+                {panelFilterCount}
+              </span>
+            )}
           </button>
+          <SortSelect
+            value={sort}
+            onChange={(value) => updateFilters({ sort: value })}
+            hasQuery={Boolean(filters.q)}
+            className="hidden sm:block"
+          />
         </div>
-      </section>
+        <TypeChips value={filters.type} onChange={(type) => updateFilters({ type })} />
+      </div>
 
-      {!user.hostel && (
-        <section className="flex flex-col gap-4 rounded-3xl border border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-amber-500/30 dark:bg-amber-500/10">
-          <div className="flex items-start gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
-              <Building className="size-5" />
-            </span>
-            <div>
-              <p className="font-semibold text-amber-900 dark:text-amber-100">Add your hostel</p>
-              <p className="text-sm text-amber-800/80 dark:text-amber-200/80">Students near you will see your listings first.</p>
-            </div>
-          </div>
-          <Link to="/settings" className={buttonClasses({ variant: "secondary", size: "sm" })}>
-            Set hostel <ArrowRight className="size-4" />
-          </Link>
-        </section>
+      {panelOpen && (
+        <FilterPanel
+          filters={filters}
+          sort={sort}
+          onChange={updateFilters}
+          onReset={() => updateFilters(Object.fromEntries(PANEL_FILTER_KEYS.map((key) => [key, undefined])))}
+        />
+      )}
+      <ActiveFilterChips filters={filters} onRemove={(key) => updateFilters({ [key]: undefined })} />
+
+      {/* Only a failed first page (or a failed refresh) replaces the grid: a failed "more" keeps the
+          listings already loaded, with a Retry under them. (`data` can't tell: after a search or
+          filter change it still holds the previous results.) */}
+      {isError && !isFetchNextPageError ? (
+        <Alert type="error" title="Couldn't load listings">
+          <p>{error?.message}</p>
+          <button type="button" onClick={refetch} className="mt-2 inline-flex items-center gap-1.5 font-semibold underline">
+            <RefreshCw className="size-3.5" /> Try again
+          </button>
+        </Alert>
+      ) : isLoading ? (
+        <ListingGrid listings={[]} loading />
+      ) : listings.length === 0 ? (
+        isFiltered ? (
+          <EmptyState
+            icon={SearchX}
+            title="No matches"
+            description="Try a different search, or remove some filters."
+            action={<Button variant="secondary" onClick={clearAll}>Clear search & filters</Button>}
+          />
+        ) : (
+          <EmptyState
+            icon={PackageOpen}
+            title={`Nothing on ${user.campus.shortName} yet`}
+            description="Be the first to post. It takes under a minute, and someone in your hostel is probably looking for it."
+            action={
+              <Link to="/sell" className={buttonClasses({ variant: "gradient" })}>
+                <Plus className="size-4" /> Post a listing
+              </Link>
+            }
+          />
+        )
+      ) : (
+        <div className={`transition-opacity ${refreshing ? "opacity-60" : ""}`} aria-busy={refreshing}>
+          <ListingGrid listings={listings} loading={isFetchingNextPage} skeletons={4} />
+        </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <section className={`${card} lg:col-span-2`}>
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-bold">Your campus feed</h2>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              <MapPin className="size-3.5 text-brand-500" /> {campus.shortName}
-            </span>
-          </div>
-
-          <div className="mt-6 flex flex-col items-center rounded-2xl border-2 border-dashed border-slate-200 px-6 py-12 text-center dark:border-slate-700">
-            <span className="grid size-14 place-items-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400">
-              <Package className="size-7" />
-            </span>
-            <h3 className="mt-4 font-bold">The marketplace opens soon</h3>
-            <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-              Listings, search and “near my hostel” arrive in the next update. Here's what you'll be able to post:
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {LISTING_TYPES.map(({ value, label, icon: Icon }) => (
-                <span
-                  key={value}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                >
-                  <Icon className="size-3.5" /> {label}
-                </span>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <aside className="space-y-6">
-          <section className={card}>
-            <h2 className="flex items-center gap-2 font-bold">
-              <ShieldCheck className="size-5 text-emerald-500" /> Safe meetup spots
-            </h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Hand over items only at these places.</p>
-            <ul className="mt-4 space-y-3">
-              {campus.safeSpots.map((spot) => (
-                <li key={spot._id} className="flex gap-3">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
-                    <MapPin className="size-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold">{spot.name}</p>
-                    {spot.description && <p className="text-xs text-slate-500 dark:text-slate-400">{spot.description}</p>}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className={card}>
-            <h2 className="font-bold">Your profile</h2>
-            <dl className="mt-4 space-y-3 text-sm">
-              <ProfileRow label="Hostel" value={user.hostel || "Not set"} />
-              <ProfileRow label="Member since" value={memberSince} />
-              <ProfileRow label="Trust score" value="New member" />
-            </dl>
-            <Link to="/settings" className={buttonClasses({ variant: "secondary", size: "sm", className: "mt-5 w-full" })}>
-              Edit profile
-            </Link>
-          </section>
-        </aside>
-      </div>
+      <div ref={sentinelRef} aria-hidden />
+      {isFetchNextPageError && (
+        <p className="flex items-center justify-center gap-1.5 py-3 text-sm text-slate-500 dark:text-slate-400">
+          Couldn't load more listings ·
+          <button type="button" onClick={() => fetchNextPage()} className="font-semibold text-brand-600 hover:underline dark:text-brand-400">
+            Retry
+          </button>
+        </p>
+      )}
+      {!hasNextPage && listings.length > 0 && (
+        <p className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">
+          That's everything on {user.campus.shortName} for now 🎉
+        </p>
+      )}
     </div>
   );
 }

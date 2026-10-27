@@ -12,10 +12,13 @@ import { getErrorMessage, getFieldErrors } from "../../utils/errors";
 export default function ForgotPassword() {
   const location = useLocation();
   const navigate = useNavigate();
+  const from = location.state?.from; // where to go once the password is reset (see Login)
   const [email, setEmail] = useState(location.state?.email ?? "");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // The server answers the same way whether or not the email has an account, and so does this page:
+  // it always moves on to the code screen, with the email as typed.
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!looksLikeEmail(email)) {
@@ -25,9 +28,10 @@ export default function ForgotPassword() {
 
     setSubmitting(true);
     try {
-      const result = await authApi.forgotPassword({ email: email.trim() });
-      toast.success(result.message);
-      navigate("/reset-password", { state: { email: result.email, resendIn: result.resendIn } });
+      const typed = email.trim();
+      const result = await authApi.forgotPassword({ email: typed });
+      toast.success(result.message || `If ${typed} has an account, a reset code is on its way.`);
+      navigate("/reset-password", { state: { email: typed, resendIn: result.resendIn, from } });
     } catch (err) {
       const fieldError = getFieldErrors(err).email;
       if (fieldError) setError(fieldError);
@@ -66,6 +70,7 @@ export default function ForgotPassword() {
 
       <Link
         to="/login"
+        state={{ email, from }}
         className="mt-8 flex items-center justify-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
       >
         <ArrowLeft className="size-4" /> Back to log in

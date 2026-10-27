@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import pointSchema from "./schemas/point.schema.js";
-import { ROLES } from "../config/constants.js";
+import { ADMIN_SCOPE, DEFAULT_TRUST, ROLES } from "../config/constants.js";
 
 const userSchema = new mongoose.Schema(
     {
@@ -63,6 +63,19 @@ const userSchema = new mongoose.Schema(
             default: ROLES.USER
         },
 
+        // Only matters for admins: their own campus, or every campus.
+        adminScope: {
+            type: String,
+            enum: Object.values(ADMIN_SCOPE),
+            default: ADMIN_SCOPE.CAMPUS
+        },
+
+        // Shared demo logins: they can't change the password, email-based resets, name, bio or photo.
+        isDemo: {
+            type: Boolean,
+            default: false
+        },
+
         isVerified: {
             type: Boolean,
             default: false
@@ -73,17 +86,44 @@ const userSchema = new mongoose.Schema(
             default: false
         },
 
+        // Recomputed from deals, reviews and reports. Shown as a score, or "New member" with no history yet.
+        trust: {
+            score: { type: Number, default: DEFAULT_TRUST.score },
+            completedDeals: { type: Number, default: DEFAULT_TRUST.completedDeals },
+            ratingAvg: { type: Number, default: DEFAULT_TRUST.ratingAvg },
+            ratingCount: { type: Number, default: DEFAULT_TRUST.ratingCount },
+            cancellations: { type: Number, default: DEFAULT_TRUST.cancellations }
+        },
+
+        // How many reports this user filed and how many were dismissed (weights future reports).
+        reportStats: {
+            filed: { type: Number, default: 0 },
+            dismissed: { type: Number, default: 0 }
+        },
+
+        // Until the email is verified: SHA-256 of the "signup" cookie given to the browser that set the
+        // current password. Only that browser can finish verifying (see verifyEmail).
+        signupNonceHash: {
+            type: String,
+            select: false
+        },
+
         // Tokens issued before this moment stop working (see isAuthenticated).
         passwordChangedAt: Date,
 
-        lastLoginAt: Date
+        lastLoginAt: Date,
+
+        // When their last open tab disconnected (socket/index.js). Shown as "Last seen …" in chats.
+        lastSeenAt: Date
     },
     {
         timestamps: true,
         toJSON: {
             transform: (doc, ret) => {
                 delete ret.password;
+                delete ret.signupNonceHash;
                 delete ret.passwordChangedAt;
+                delete ret.reportStats;
                 delete ret.__v;
                 return ret;
             }

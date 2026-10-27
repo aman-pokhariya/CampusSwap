@@ -1,0 +1,57 @@
+# Render Blueprint for the CampusSwap API (spec: https://render.com/docs/blueprint-spec).
+# Render dashboard → New → Blueprint → pick this repo. The React app is hosted on Vercel
+# (frontend/vercel.json), which forwards /api requests to this service.
+services:
+  - type: web
+    name: campusswap-api
+    runtime: node
+    rootDir: backend
+    region: singapore # the closest Render region to India
+    plan: free # sleeps after 15 idle minutes; the first request after that takes up to a minute
+    buildCommand: npm ci # with NODE_ENV=production npm skips the devDependencies
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "24" # the version used in development
+      # Requests reach Express through two proxies: Vercel's /api rewrite, then Render's load balancer.
+      # Express trusts exactly that many to find the visitor's real IP for the rate limits.
+      - key: TRUST_PROXY
+        value: "2"
+      - key: JWT_SECRET
+        generateValue: true
+
+      # Render asks for these once, when the Blueprint is created. Change them later in the service's
+      # Environment tab (later Blueprint syncs leave sync: false values alone).
+      - key: MONGO_URI
+        sync: false
+      # The exact Vercel production URL, e.g. https://campusswap.vercel.app (no trailing slash; separate
+      # several with commas). CORS, the origin check and live chat refuse every other site.
+      - key: CLIENT_URL
+        sync: false
+      # Sign-up and reset codes go out through Brevo's email API, over HTTPS (free for 300 emails a day):
+      # create a Brevo account, verify a sender address, then paste an API key (SMTP & API → API keys).
+      - key: BREVO_API_KEY
+        sync: false
+      # Who the codes come from, e.g. "CampusSwap <you@example.com>": the sender you verified in Brevo.
+      - key: EMAIL_FROM
+        sync: false
+      # A little under Brevo's free daily quota. Raise it on a paid plan (or about 400 for Gmail).
+      - key: EMAIL_DAILY_CAP
+        value: "280"
+      # Optional: Gmail over SMTP with an app password, used only while BREVO_API_KEY is empty. Free Render
+      # web services can't open SMTP connections (ports 25, 465 and 587 are blocked since September 2025),
+      # so this only works on a paid instance type.
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      # Photo uploads. Required in production: Render's disk is wiped on every deploy and restart.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

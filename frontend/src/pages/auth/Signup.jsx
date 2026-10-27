@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Building, Mail, User, UserPlus } from "lucide-react";
 import AuthHeader from "../../components/auth/AuthHeader";
@@ -24,8 +24,11 @@ const validateForm = ({ name, email, password }) => {
 };
 
 export default function Signup() {
+  const location = useLocation();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", email: "", password: "", hostel: "" });
+  const from = location.state?.from; // where to go once verified (see Login)
+  // The email comes back filled in when verification sends the user here to start again.
+  const [form, setForm] = useState({ name: "", email: location.state?.email ?? "", password: "", hostel: "" });
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [campuses, setCampuses] = useState([]);
@@ -66,7 +69,7 @@ export default function Signup() {
         hostel: hostel || undefined,
       });
       toast.success(result.message);
-      navigate("/verify-email", { state: { email: result.email, resendIn: result.resendIn } });
+      navigate("/verify-email", { state: { email: result.email ?? form.email.trim(), resendIn: result.resendIn, from } });
     } catch (error) {
       setErrors(getFieldErrors(error));
       toast.error(getErrorMessage(error));
@@ -144,7 +147,7 @@ export default function Signup() {
 
       <p className="mt-8 text-center text-sm text-slate-600 dark:text-slate-400">
         Already have an account?{" "}
-        <Link to="/login" className="font-semibold text-brand-600 hover:underline dark:text-brand-400">
+        <Link to="/login" state={{ email: form.email, from }} className="font-semibold text-brand-600 hover:underline dark:text-brand-400">
           Log in
         </Link>
       </p>

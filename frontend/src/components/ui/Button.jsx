@@ -10,6 +10,10 @@ const VARIANTS = {
   ghost:
     "text-slate-700 hover:bg-slate-100 focus-visible:outline-brand-600 dark:text-slate-300 dark:hover:bg-slate-800",
   danger: "bg-rose-600 text-white hover:bg-rose-700 focus-visible:outline-rose-600",
+  // A quiet destructive action (Decline, Delete) next to louder buttons. Its own variant, because
+  // adding text-rose-* to "ghost" would put two text colours on one element.
+  "danger-ghost":
+    "text-rose-600 hover:bg-rose-50 focus-visible:outline-rose-600 dark:text-rose-400 dark:hover:bg-rose-500/10",
 };
 
 const SIZES = {

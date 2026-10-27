@@ -1,3 +1,5 @@
+import { imageUrl } from "../../utils/image";
+
 const GRADIENTS = [
   "from-brand-500 to-violet-500",
   "from-sky-500 to-cyan-500",
@@ -7,12 +9,14 @@ const GRADIENTS = [
   "from-violet-500 to-fuchsia-500",
 ];
 
+// Tailwind classes, plus the pixel size to request from Cloudinary (2x for sharp screens).
 const SIZES = {
-  xs: "size-6 text-[10px]",
-  sm: "size-8 text-xs",
-  md: "size-10 text-sm",
-  lg: "size-14 text-lg",
-  xl: "size-20 text-2xl",
+  xs: { classes: "size-6 text-[10px]", px: 48 },
+  sm: { classes: "size-8 text-xs", px: 64 },
+  md: { classes: "size-10 text-sm", px: 80 },
+  lg: { classes: "size-14 text-lg", px: 112 },
+  xl: { classes: "size-20 text-2xl", px: 160 },
+  "2xl": { classes: "size-28 text-4xl", px: 224 },
 };
 
 const initialsOf = (name = "") =>
@@ -22,14 +26,22 @@ const initialsOf = (name = "") =>
 const hashOf = (text) => [...text].reduce((hash, ch) => (hash * 31 + ch.charCodeAt(0)) >>> 0, 7);
 
 export default function Avatar({ name = "", src, size = "md", className = "" }) {
+  const { classes, px } = SIZES[size];
+
   if (src) {
-    return <img src={src} alt={name} className={`${SIZES[size]} shrink-0 rounded-full object-cover ${className}`} />;
+    return (
+      <img
+        src={imageUrl(src, { width: px, height: px })}
+        alt={name}
+        className={`${classes} shrink-0 rounded-full object-cover ${className}`}
+      />
+    );
   }
 
   return (
     <span
       aria-hidden
-      className={`grid ${SIZES[size]} shrink-0 place-items-center rounded-full bg-linear-to-br font-bold text-white ${
+      className={`grid ${classes} shrink-0 place-items-center rounded-full bg-linear-to-br font-bold text-white ${
         GRADIENTS[hashOf(name) % GRADIENTS.length]
       } ${className}`}
     >

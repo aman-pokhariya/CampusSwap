@@ -18,22 +18,24 @@ import {
 } from "lucide-react";
 import { buttonClasses } from "../components/ui/Button";
 import Avatar from "../components/ui/Avatar";
+import ComingSoonBadge from "../components/ui/ComingSoonBadge";
 import HeroPreview from "../components/landing/HeroPreview";
 import SwapCircleDiagram from "../components/landing/SwapCircleDiagram";
 import { campusApi } from "../api/campus.api";
-import { LISTING_TYPES } from "../constants/listingTypes";
+import { LISTING_TYPES } from "../constants/listing";
 
+// `soon`: designed, but not in the app yet (it comes in a later update), so it says "Coming soon".
 const FEATURES = [
   { icon: QrCode, title: "QR safe handover", text: "Meet at a campus safe spot. The buyer scans the seller's QR code to confirm the deal." },
-  { icon: Sparkles, title: "AI-written listings", text: "Upload a photo and AI fills in the title, category, condition and a fair price." },
+  { icon: Sparkles, title: "AI-written listings", text: "Upload a photo and AI fills in the title, category, condition and a fair price.", soon: true },
   { icon: MessagesSquare, title: "Real-time chat & offers", text: "Negotiate with offer cards: counter, accept, done. With typing indicators and read receipts." },
-  { icon: ShieldCheck, title: "Trust score", text: "Built from verified deals, ratings and response time. Reviews unlock only after a real handover." },
-  { icon: Leaf, title: "Eco impact", text: "See how much waste you kept out of landfill, and which hostel reuses the most." },
+  { icon: ShieldCheck, title: "Trust score", text: "Built from finished deals, ratings and a clean record. Reviews unlock only after a real handover." },
+  { icon: Leaf, title: "Eco impact", text: "See how much waste you kept out of landfill, and which hostel reuses the most.", soon: true },
 ];
 
 const STEPS = [
   { icon: MailCheck, title: "Verify your college email", text: "A 6-digit code proves you're a real student. No outsiders, ever." },
-  { icon: Camera, title: "Post in seconds", text: "Snap a photo and let AI write the listing. Sell, rent, swap or give it away." },
+  { icon: Camera, title: "Post in seconds", text: "Snap a photo, set a price and you're live. Sell, rent, swap or give it away.", soon: "AI-written drafts" },
   { icon: Handshake, title: "Chat & agree a deal", text: "Make offers, counter, then pick a safe meetup spot and time." },
   { icon: ScanLine, title: "Scan to complete", text: "Scan the seller's QR at the handover. The deal is confirmed and reviews unlock." },
 ];
@@ -86,8 +88,8 @@ function Hero({ campuses }) {
           </h1>
 
           <p className="mx-auto mt-6 max-w-xl text-lg text-slate-600 lg:mx-0 dark:text-slate-400">
-            The marketplace for verified students only. Post in seconds with AI, negotiate in real time, and finish
-            every deal at a safe spot with a QR handover.
+            The marketplace for verified students only. Post in seconds, negotiate in real time, and finish every
+            deal at a safe spot with a QR handover.
           </p>
 
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start">
@@ -173,7 +175,9 @@ function Features() {
         <div className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <article className="relative overflow-hidden rounded-3xl border border-slate-200 bg-linear-to-br from-brand-50 via-white to-fuchsia-50 p-6 sm:p-8 lg:col-span-2 lg:row-span-2 dark:border-slate-800 dark:from-brand-500/10 dark:via-slate-900 dark:to-fuchsia-500/10">
             <FeatureIcon icon={Repeat} />
-            <h3 className="mt-5 text-2xl font-bold">Swap Circles</h3>
+            <h3 className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xl font-bold">
+              Swap Circles <ComingSoonBadge />
+            </h3>
             <p className="mt-2 max-w-lg text-slate-600 dark:text-slate-400">
               Barter is hard when the person who wants your book has nothing you need. CampusSwap finds loops of two or
               three students where everyone gets what they want, with no cash involved.
@@ -181,10 +185,12 @@ function Features() {
             <SwapCircleDiagram className="mx-auto mt-6 w-full max-w-md" />
           </article>
 
-          {FEATURES.map(({ icon, title, text }) => (
+          {FEATURES.map(({ icon, title, text, soon }) => (
             <article key={title} className={`${card} p-6`}>
               <FeatureIcon icon={icon} />
-              <h3 className="mt-5 text-lg font-bold">{title}</h3>
+              <h3 className="mt-5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-lg font-bold">
+                {title} {soon && <ComingSoonBadge />}
+              </h3>
               <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-400">{text}</p>
             </article>
           ))}
@@ -199,7 +205,7 @@ function HowItWorks() {
     <section id="how-it-works" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-20 sm:px-6">
       <SectionHeading eyebrow="How it works" title="From post to handover in four steps" />
       <ol className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {STEPS.map(({ icon: Icon, title, text }, index) => (
+        {STEPS.map(({ icon: Icon, title, text, soon }, index) => (
           <li key={title} className={`${card} relative overflow-hidden p-6`}>
             <span className="absolute top-3 right-5 text-6xl font-extrabold text-slate-100 select-none dark:text-slate-800">
               {index + 1}
@@ -209,6 +215,11 @@ function HowItWorks() {
             </span>
             <h3 className="relative mt-5 font-bold">{title}</h3>
             <p className="relative mt-1.5 text-sm text-slate-600 dark:text-slate-400">{text}</p>
+            {soon && (
+              <p className="relative mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                <Sparkles className="size-3.5 text-violet-500" aria-hidden /> {soon} <ComingSoonBadge />
+              </p>
+            )}
           </li>
         ))}
       </ol>
@@ -281,7 +292,7 @@ function Safety() {
               {[
                 ["23", "deals"],
                 ["4.9★", "rating"],
-                ["~5 min", "replies"],
+                ["3", "badges"],
               ].map(([value, label]) => (
                 <div key={label} className="rounded-2xl bg-slate-50 py-3 dark:bg-slate-800/70">
                   <p className="font-extrabold">{value}</p>
