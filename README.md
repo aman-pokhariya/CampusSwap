@@ -9,6 +9,9 @@ Built with the MERN stack (MongoDB, Express, React, Node.js) as a full-stack por
 **🌐 Live demo: https://campus-swap-ivory.vercel.app** — log in with `buyer@campusswap.dev` or `seller@campusswap.dev`
 (password `Demo@1234`). The free server sleeps when idle, so the first load can take up to a minute.
 
+**🎥 Demo video: https://drive.google.com/drive/folders/1X1a4pO8yWyALnRohwnJf9vhHILtrS-FA?usp=sharing** — a walkthrough of the
+main flows (listing, chat and offers, QR handover, trust and admin).
+
 ![CampusSwap landing page](docs/screenshots/landing-light.png)
 
 ## Highlights
